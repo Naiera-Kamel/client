@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Owner Dashboard</title>
+<style>
+  /* تم الاحتفاظ بنفس الستايل الأصلي تماماً */
+  body {
+    font-family: Arial, sans-serif;
+    background-color: #f4f7f9;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  h2 {
+    background-color: #4CAF50;
+    color: white;
+    width: 100%;
+    text-align: center;
+    padding: 20px 0;
+    margin: 0;
+    font-size: 28px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  }
+  #connectSection {
+    margin: 20px 0;
+    display: flex;
+    flex-direction: column; /* تعديل بسيط لترتيب الدخول */
+    align-items: center;
+    gap: 15px;
+  }
+  input, button {
+    padding: 10px;
+    font-size: 16px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+  }
+  button {
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    cursor: pointer;
+  }
+  button:hover {
+    background-color: #45a049;
+  }
+  #status {
+    font-weight: bold;
+    margin-bottom: 20px;
+    color: #333;
+  }
+  #gallery {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 15px;
+    width: 90%;
+  }
+  /* قسم لوحة البيانات يختفي في البداية */
+  #dashboard {
+    display: none; 
+    width: 100%;
+    flex-direction: column;
+    align-items: center;
+  }
+  .media-item {
+    background-color: white;
+    padding: 10px;
+    border-radius: 10px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .media-item img, .media-item video {
+    max-width: 300px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+  }
+  .media-item button {
+    background-color: #f44336;
+    margin-top: 5px;
+  }
+  .media-item button:hover {
+    background-color: #d32f2f;
+  }
+</style>
+</head>
+<body>
+
+<h2>Owner Dashboard</h2>
+
+<div id="connectSection">
+  <p style="margin: 0; color: #666;">Enter your unique code (1 - 200)</p>
+  <div style="display: flex; gap: 10px;">
+    <input type="number" id="code" placeholder="Code (e.g. 45)" min="1" max="200">
+    <button id="connectBtn">Login</button>
+  </div>
+</div>
+
+<div id="dashboard">
+  <p id="status">Connected! Waiting for media...</p>
+  <div id="gallery"></div>
+</div>
+
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script>
+const socket = io("http://localhost:3000");
+let brandCode = "";
+
+const connectSection = document.getElementById("connectSection");
+const dashboard = document.getElementById("dashboard");
+const gallery = document.getElementById("gallery");
+const status = document.getElementById("status");
+const codeInput = document.getElementById("code");
+
+document.getElementById("connectBtn").onclick = () => {
+  brandCode = codeInput.value.trim();
+  const codeNum = parseInt(brandCode);
+
+  // Logic: Validation for codes between 1 and 200
+  if (!brandCode || isNaN(codeNum) || codeNum < 1 || codeNum > 200) {
+    return alert("Invalid Code! Please enter a number between 1 and 200.");
+  }
+
+  // Switch views
+  connectSection.style.display = "none";
+  dashboard.style.display = "flex";
+  
+  // Logic: Registering the owner to a specific "Room" based on the code
+  socket.emit("register-owner", brandCode);
+  status.innerText = `Connected as Owner #${brandCode}. Waiting for your files...`;
+  console.log("Owner connected with private code:", brandCode);
+};
+
+// Existing media (Filtered by server for this brandCode only)
+socket.on("existing-media", list => {
+  gallery.innerHTML = ""; // Clear for security
+  list.forEach(renderMedia);
+});
+
+// New media (Only received if sent to this brandCode's room)
+socket.on("new-media", renderMedia);
+
+// Delete media
+socket.on("delete-media", id => {
+  const elem = document.getElementById(id);
+  if (elem) elem.remove();
+});
+
+function renderMedia(media) {
+  const div = document.createElement("div");
+  div.id = media.id;
+  div.className = "media-item";
+
+  const remainingTime = () => Math.max(0, Math.floor((media.expiresAt - Date.now()) / 1000));
+  const timer = document.createElement("p");
+  timer.innerText = `Expires in ${remainingTime()}s`;
+
+  const interval = setInterval(() => {
+    const t = remainingTime();
+    timer.innerText = `Expires in ${t}s`;
+    if (t <= 0) clearInterval(interval);
+  }, 1000);
+
+  let mediaElem;
+  if (media.type === "image") {
+    mediaElem = document.createElement("img");
+    mediaElem.src = media.data;
+  } else if (media.type === "video") {
+    mediaElem = document.createElement("video");
+    mediaElem.src = media.data;
+    mediaElem.controls = true;
+  } else {
+    mediaElem = document.createElement("a");
+    mediaElem.href = media.data;
+    mediaElem.innerText = "Download File";
+    mediaElem.download = "file";
+    mediaElem.style.marginBottom = "10px";
+  }
+
+  const btn = document.createElement("button");
+  btn.innerText = "Delete";
+  btn.onclick = () => {
+    socket.emit("delete-media", { brandCode, id: media.id });
+    clearInterval(interval);
+  };
+
+  div.append(mediaElem, timer, btn);
+  gallery.appendChild(div);
+}
+</script>
+</body>
+</html>
